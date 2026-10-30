@@ -794,6 +794,12 @@ function envLight(){
   sun.position.set(P.x+env.dx*150,env.dy*150,P.z+env.dz*150);
   sun.target.position.set(P.x,0,P.z);
   if(spotL)spotL.intensity=clamp(env.night*1.5+env.rain*0.35,0,1.7);
+  /* إضاءة الشوارع: تُشغل ليلاً وتطفئ نهاراً */
+  var streetI=clamp(env.night*1.2+env.fog*0.6,0,1.2);
+  if(streetLights){streetLights.traverse(function(o){if(o.isPointLight)o.intensity=streetI;});}
+  if(sunMesh){sunMesh.material.color.setHex(env.night>0.5?0x556677:0xfff2c0);sunMesh.visible=env.night<0.6;}
+  if(moonMesh){moonMesh.material.color.setHex(env.night>0.4?0xe0e8ff:0x445566);moonMesh.visible=env.night>0.3;}
+  if(stars){stars.material.opacity=Math.pow(clamp(env.night,0,1),1.8);}
 }
 /* ---- غيوم متحركة + طيور ---- */
 var cloudG=null,cloudL=[],cloudMat=null,birdL=[],birdMat=null,cwT=new THREE.Color(),cwW=new THREE.Color(1,1,1);
@@ -3001,6 +3007,7 @@ function noiseBurst(type,f,q,dur,vol){
 function curbThump(k){k=clamp(k,0.1,0.6);tone(110,50,0.12,k*0.5,'sine');noiseBurst('lowpass',500,0.8,0.1,k*0.6);}
 function crashSound(k){
   k=clamp(k,0.1,0.9);
+  metalHit(k*0.9);
   /* ضربة معدن + انبعاج */
   noiseBurst('lowpass',1800,0.8,0.45,k*1.1);
   noiseBurst('bandpass',700+Math.random()*900,2,0.25,k*0.7);
@@ -3021,6 +3028,49 @@ function shiftSound(){tone(80,52,0.09,0.05,'sine');}
 function thunderSound(){
   noiseBurst('lowpass',230,0.7,2.8,0.9);noiseBurst('bandpass',900,1,0.5,0.35);tone(58,30,2.4,0.5,'sine');
 }
+
+/* صوت ضربة معدنية واقعية عند التصادم (خشم + زجاج + بلاستيك) */
+function metalHit(k){
+  if(!audio.ctx||!SAVE.sound)return;
+  k=clamp(k,0.1,1);
+  var c=audio.ctx,t=c.currentTime;
+  /* طقة معدن حادة */
+  noiseBurst('bandpass',900+Math.random()*600,1.2,0.35,k*0.9);
+  noiseBurst('highpass',3500+Math.random()*2500,3,0.08,k*0.5);
+  /* انبعاج منخفض */
+  var s=c.createBufferSource(),b=c.createBiquadFilter(),g=c.createGain();
+  s.buffer=audio.nb;b.type='lowpass';b.frequency.value=400+Math.random()*300;b.Q.value=1;
+  g.gain.setValueAtTime(k*0.6,t);g.gain.exponentialRampToValueAtTime(0.0001,t+0.5);
+  s.connect(b);b.connect(g);g.connect(audio.master);s.start(t);s.stop(t+0.55);
+  /* زجاج يتحطم عند ضربات قوية */
+  if(k>0.35){
+    var n=Math.round(3+k*8),q;
+    for(q=0;q<n;q++)setTimeout(function(){
+      noiseBurst('highpass',5000+Math.random()*6000,4,0.03+Math.random()*0.04,k*(0.15+Math.random()*0.15));
+    },40+q*25);
+  }
+}
+
+/* صوت نيترو هيوosh عند التفعيل */
+function nitroWhoosh(){
+  if(!audio.ctx||!SAVE.sound)return;
+  var c=audio.ctx,t=c.currentTime;
+  var s=c.createBufferSource(),b=c.createBiquadFilter(),g=c.createGain();
+  s.buffer=audio.nb;b.type='bandpass';b.frequency.value=1500;b.Q.value=0.8;
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.18,t+0.05);g.gain.exponentialRampToValueAtTime(0.0001,t+1.2);
+  s.connect(b);b.connect(g);g.connect(audio.master);s.start(t);s.stop(t+1.3);
+  tone(600,3000,0.4,0.06,'sawtooth');
+}
+
+/* صرير إطارات واقعي حسب نسبة الانزلاق والسرعة */
+function tireScreech(slip,sp){
+  if(!audio.ctx||!SAVE.sound)return;
+  var g=clamp(slip*0.3,0,0.6)*clamp(sp/60,0,1);
+  if(g<0.02){audio.sqg.gain.setTargetAtTime(0,a.ctx.currentTime,0.05);return;}
+  audio.sqg.gain.setTargetAtTime(g*0.12,a.ctx.currentTime,0.04);
+}
+
+
 /* ملفات صوت المحرك لكل سيارة: cy=نبضات احتراق لكل دورة، w=أوزان التوافقيات، dr=تشويه، lp=انفتاح الفلتر، lf=سرعة التموّج، ld=عمق التموّج (خشونة)، tb=تيربو، hy=عواء هايبرد، pp=احتمال الطقطقة */
 var EVP={
   fer:{cy:4,w:[.55,.5,.16,.7],dr:2.2,lp:1,lf:.5,ld:.22,tb:0,hy:0,pp:.04},
@@ -3056,7 +3106,7 @@ function audioUpdate(on){
     a.ig.gain.setTargetAtTime(act?(0.004+0.03*thr*r01):0,t,0.08);a.ibp.frequency.setTargetAtTime(500+rpm*0.35,t,0.1);
     a.bsg.gain.setTargetAtTime(act&&br&&sp>1.5&&sp<22?0.012*(1-sp/30)*(0.7+0.3*Math.sin(t*40)):0,t,0.04);a.bsp.frequency.setTargetAtTime(2700+sp*40,t,0.1);
     var absG=(act&&P.abs&&sp>6)?(0.05+0.045*Math.sign(Math.sin(t*88))):0;a.abg.gain.setTargetAtTime(absG,t,0.01);
-    a.sg.gain.setTargetAtTime(act?clamp(slip*0.24,0,0.34):0,t,0.04);a.sbp.frequency.setTargetAtTime(1500+slip*700+sp*12,t,0.06);
+    tireScreech(slip,sp);a.sbp.frequency.setTargetAtTime(1500+slip*700+sp*12,t,0.06);
     var dr=act&&slip>0.9?clamp((slip-0.9)/2.6,0,1):0,wob=0.75+0.25*Math.sin(t*19)+0.1*Math.sin(t*41);
     a.sqg.gain.setTargetAtTime(dr*0.085*wob,t,0.05);
     a.sq1.frequency.setTargetAtTime(1020+slip*95+sp*7+Math.sin(t*13)*40,t,0.04);a.sq2.frequency.setTargetAtTime(1530+slip*140+sp*10+Math.sin(t*17)*55,t,0.04);
@@ -3425,7 +3475,9 @@ function stepPlayer(dt){
   var fx=Math.sin(P.h),fz=Math.cos(P.h),rx=-fz,rz=fx;
   var u=P.vx*fx+P.vz*fz,v=P.vx*rx+P.vz*rz,w=P.wr,u0=u;
   var wantN=inp('nitro')&&P.nitro>1&&P.damage<100.1;
+  var nitroJustOn=wantN&&!P.nitroOn;
   P.nitroOn=!!wantN;
+  if(nitroJustOn){nitroWhoosh();P.nitro=Math.max(0,P.nitro-5);}
   if(P.nitroOn)P.nitro=Math.max(0,P.nitro-20*dt);else P.nitro=Math.min(spec.nitroMax,P.nitro+spec.nitroRegen*dt);
   var dmgF=1-0.3*dmg,cargo=(mission&&mission.stage===1)?mission.mt.slow:1;
   var maxS=spec.maxSpeed*dmgF*cargo*(P.nitroOn?1.35:1);
@@ -4578,7 +4630,7 @@ $('pQuit').onclick=function(){if(RACE.on)raceStop();started=false;ovStack=[];ope
 
 /* ===================== التشغيل ===================== */
 applySize();
-world=buildWorld();buildMiniMap(world.parks);
+world=buildWorld();buildStreetLights();buildMiniMap(world.parks);
 var WCH=[];world.group.children.forEach(function(m){if(m.isMesh&&!m.isInstancedMesh&&m.frustumCulled&&m.geometry){m.geometry.computeBoundingSphere();var bs=m.geometry.boundingSphere;if(bs&&bs.radius<120)WCH.push({m:m,x:bs.center.x,z:bs.center.z,r:bs.radius});}});
 function wcCull(){var cx=camera.position.x,cz=camera.position.z,D=Q.fogFar*1.02,i,c,dx,dz,v;for(i=0;i<WCH.length;i++){c=WCH[i];dx=c.x-cx;dz=c.z-cz;v=Math.sqrt(dx*dx+dz*dz)-c.r<D;if(v!==c.m.visible)c.m.visible=v;}}
 buildPlayerCar();
