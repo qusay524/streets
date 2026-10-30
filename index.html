@@ -2780,18 +2780,16 @@ var TCOL=['#c9ccd1','#f1f1f1','#2b2f36','#b3262f','#2c5fa8','#c8b58a','#3b7a4a',
 var poolGeo=new THREE.PlaneGeometry(4.6,11);
 var matFarCar=new THREE.MeshLambertMaterial({vertexColors:true});
 function trafficMesh(){
-  var TP=[0,0,0,1,1,2,3,5,5,6,7,8,9,10,13,0,1,5,4,11,12,11],type=TP[Math.floor(Math.random()*TP.length)],col=type===3?'#f2b705':(type===7?'#eeeeee':TCOL[Math.floor(Math.random()*TCOL.length)]);
-  var cg=carGeo(type,col,{});
-  var grp=new THREE.Group();
-  var body=new THREE.Mesh(cg.geo,matCar);body.castShadow=!!Q.shadow;grp.add(body);
-  grp.add(new THREE.Mesh(cg.head,matHead));
-  var tm=new THREE.MeshBasicMaterial({color:0x7a0c0c});grp.add(new THREE.Mesh(cg.tail,tm));
-  if(Q.tpool){var p=new THREE.Mesh(poolGeo,trafPoolMat);p.rotation.x=Math.PI/2;p.position.set(0,0.17,cg.len/2+5.5);grp.add(p);}
-  var fg=cg.far;if(!fg){fg=cg.far=cg.geo.clone();fg.clearGroups();}
-  var far=new THREE.Mesh(fg,matFarCar);far.visible=false;grp.add(far);
-  grp.userData.lod={b:body,h:grp.children[1],t:grp.children[2],p:Q.tpool?grp.children[3]:null,f:far,m:0};
-  grp.scale.setScalar(1.1);scene.add(grp);
-  return{mesh:grp,len:cg.len,tail:tm};
+  var KK=['taxi','taxi','delivery-truck','truck','garbage-truck','ambulance','firetruck','truck-flat'],
+      id=KK[Math.floor(Math.random()*KK.length)],
+      grp=typeof knMesh==='function'?knMesh(id):new THREE.Group(),
+      tail=new THREE.MeshBasicMaterial({color:0x7a0c0c});
+  grp.userData.kn=true;
+  grp.userData.tailMat=tail;
+  grp.scale.setScalar(1.1);
+  scene.add(grp);
+  var len=(grp.userData.H||4.2)*1.1;
+  return{mesh:grp,len:len,tail:tail};
 }
 function startLane(t,i,j,d){
   var v=DIRS[d],r=DIRS[rightOf(d)];
@@ -2842,7 +2840,10 @@ function trReal(t){
   if(t.rk===undefined){
     if(Math.random()<0.4&&typeof knMesh==='function'){var KK=['taxi','taxi','delivery-truck','truck','garbage-truck','ambulance','firetruck','truck-flat'];t.rk='k:'+KK[Math.floor(Math.random()*KK.length)];}
     else t.rk=TR_IDS[Math.floor(Math.random()*TR_IDS.length)]+'|'+TR_COL[Math.floor(Math.random()*TR_COL.length)];}
-  if(t.rk.charAt(0)==='k'){var kc=knMesh(t.rk.slice(2));kc.visible=false;t.mesh.add(kc);t.real=kc;return kc;}
+  if(t.rk.charAt(0)==='k'){
+    if(t.mesh.userData.kn){t.real=t.mesh.children[0]||null;return t.real;}
+    var kc=knMesh(t.rk.slice(2));kc.visible=false;t.mesh.add(kc);t.mesh.userData.kn=true;t.real=kc;return kc;
+  }
   var T=TRT[t.rk];
   if(!T){
     if(trBuilt>=1)return null; trBuilt++;
